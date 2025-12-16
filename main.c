@@ -3,8 +3,8 @@
 #include <stdbool.h>
 #include <string.h>
 #include <limits.h>
+#include <stdint.h>
 #include <math.h>
-
 
 typedef enum{
     TOKEN_NUMBER,
@@ -27,7 +27,9 @@ token make_token(token_type type, const char* text){
     t.priority = 0;
     if (text) {
         t.value = malloc(strlen(text) + 1);
-        if (t.value) strcpy(t.value, text);
+        if (t.value){
+            strcpy(t.value, text);
+        }
     } else {
         t.value = NULL;
     }
@@ -36,21 +38,39 @@ token make_token(token_type type, const char* text){
         t.priority = 1;
     } else if(type == TOKEN_OPERATOR){
         if (t.value) {
-            if (strcmp(t.value, "**") == 0) t.priority = 2; 
-            else if (strcmp(t.value, "*") == 0 || strcmp(t.value, "/") == 0 || strcmp(t.value, "%") == 0) t.priority = 3;
-            else if (strcmp(t.value, "+") == 0 || strcmp(t.value, "-") == 0) t.priority = 4;
-            else if (strcmp(t.value, "<<") == 0 || strcmp(t.value, ">>") == 0) t.priority = 5;
-            else if (strcmp(t.value, "&") == 0) t.priority = 6;
-            else if (strcmp(t.value, "^") == 0) t.priority = 7;
-            else if (strcmp(t.value, "|") == 0) t.priority = 8;
-            else t.priority = 100; 
+            if (strcmp(t.value, "**") == 0){
+                t.priority = 2; 
+            }
+            else if (strcmp(t.value, "*") == 0 || strcmp(t.value, "/") == 0 || strcmp(t.value, "%") == 0){
+                 t.priority = 3;
+            }
+            else if (strcmp(t.value, "+") == 0 || strcmp(t.value, "-") == 0){
+                t.priority = 4;
+            }
+            else if (strcmp(t.value, "<<") == 0 || strcmp(t.value, ">>") == 0){
+                t.priority = 5;
+            }
+            else if (strcmp(t.value, "&") == 0){
+                t.priority = 6;
+            }
+            else if (strcmp(t.value, "^") == 0){
+                t.priority = 7;
+            }
+            else if (strcmp(t.value, "|") == 0){
+                t.priority = 8;
+            }
+            else{
+                t.priority = 100; 
+            }
         }
     }
     return t;
 }
 
 void free_token(token* t){
-    if(!t) return;
+    if(!t){
+        return;
+    }
     if(t->value){
         free(t->value);
         t->value = NULL;
@@ -85,7 +105,9 @@ bool initialize_stack(stack* s, size_t capacity){
 }
 
 void delete_stack(stack* s){
-    if(!s || !s->data) return;
+    if(!s || !s->data){
+        return;
+    }
     for(size_t i = 0; i < s->top; i++){
         free_token(&s->data[i]);
     }
@@ -149,8 +171,10 @@ bool initialize_queue(queue* q, size_t capacity){
 }
 
 void delete_queue(queue* q){
-    if(!q || !q->data) return;
-    for(size_t i = q->front; i < q->rear; i++){
+    if(!q || !q->data){
+        return;
+    }
+    for(size_t i = 0; i < q->rear; i++){
         free_token(&q->data[i]);
     }
     free(q->data);
@@ -177,7 +201,9 @@ token pop_queue(queue* q){
     if(q->front == q->rear){
         return make_token(TOKEN_NULL, NULL);
     } 
-    token res = q->data[q->front++];
+    token res = q->data[q->front];
+    q->data[q->front].value = NULL;
+    q->front++;
     return res;
 }
 
@@ -192,9 +218,6 @@ bool is_right_assoc(const token* t){
     if (t->type == TOKEN_UNARY_OPERATOR){
         return true;
     } 
-    if (strcmp(t->value, "**") == 0){
-        return true;
-    } 
     return false;
 }
 
@@ -202,18 +225,14 @@ bool is_operator_token(const token* t){
     return t && (t->type == TOKEN_OPERATOR || t->type == TOKEN_UNARY_OPERATOR);
 }
 
-bool tokenizator(char* math_expression, queue* res_queue){
+bool tokenizator(char* math_expression, queue* res_queue, int* err_code){
     size_t length = strlen(math_expression);
     size_t index = 0;
 
     token prev = make_token(TOKEN_NULL, NULL);
 
     while(index < length){
-
-        if(index >= length) break;
-
-        if(math_expression[index] == ' ' || math_expression[index] == '\t' ||
-           math_expression[index] == '\n' || math_expression[index] == '\r'){
+        if(math_expression[index] == ' ' || math_expression[index] == '\t' ||math_expression[index] == '\n' || math_expression[index] =='\r'){
             index++;
             continue;
         }
@@ -226,10 +245,12 @@ bool tokenizator(char* math_expression, queue* res_queue){
 
             size_t buffer_size = temp_index - index + 1;
             char* buffer = malloc(buffer_size);
-            if (!buffer) {
-                fprintf(stderr, "Error: Memory allocation failed\n");
-                free_token(&prev);
-                return false;
+            if (!buffer){ 
+                if(err_code){
+                    *err_code = 5;
+                    free_token(&prev);
+                    return false;
+                }    
             }
             memcpy(buffer, math_expression + index, buffer_size - 1);
             buffer[buffer_size - 1] = '\0';
@@ -237,10 +258,13 @@ bool tokenizator(char* math_expression, queue* res_queue){
             token temp_token = make_token(TOKEN_NUMBER, buffer);
             free(buffer);
 
-            if (!push_queue(res_queue, temp_token)) {
-                free_token(&temp_token);
-                free_token(&prev);
-                return false;
+            if (!push_queue(res_queue, temp_token)){ 
+                free_token(&temp_token); 
+                free_token(&prev); 
+                if(err_code){
+                    *err_code = 5; 
+                } 
+                return false; 
             }
 
             index = temp_index;
@@ -252,10 +276,15 @@ bool tokenizator(char* math_expression, queue* res_queue){
 
         if(math_expression[index] == '('){
             token tmp = make_token(TOKEN_LPAREN, "(");
-            if (!push_queue(res_queue, tmp)) {
-                free_token(&tmp);
-                free_token(&prev);
-                return false;
+            if (!push_queue(res_queue, tmp))
+            { 
+                free_token(&tmp); 
+                free_token(&prev); 
+                if(err_code)
+                {
+                    *err_code = 5;
+                    return false;
+                }   
             }
             free_token(&prev);
             prev = copy_token(&tmp);
@@ -265,10 +294,15 @@ bool tokenizator(char* math_expression, queue* res_queue){
 
         if(math_expression[index] == ')'){
             token tmp = make_token(TOKEN_RPAREN, ")");
-            if (!push_queue(res_queue, tmp)) {
-                free_token(&tmp);
-                free_token(&prev);
-                return false;
+            if (!push_queue(res_queue, tmp))
+            { 
+                free_token(&tmp); 
+                free_token(&prev); 
+                if(err_code)
+                {
+                    *err_code = 5;
+                    return false;
+                }   
             }
             free_token(&prev);
             prev = copy_token(&tmp);
@@ -279,10 +313,15 @@ bool tokenizator(char* math_expression, queue* res_queue){
         if(index + 1 < length){
             if(math_expression[index] == '*' && math_expression[index+1] == '*'){
                 token tmp = make_token(TOKEN_OPERATOR, "**");
-                if (!push_queue(res_queue, tmp)) {
-                    free_token(&tmp);
-                    free_token(&prev);
-                    return false;
+                if (!push_queue(res_queue, tmp))
+                { 
+                    free_token(&tmp); 
+                    free_token(&prev); 
+                    if(err_code)
+                    {
+                        *err_code = 5;
+                        return false;
+                    }   
                 }
                 free_token(&prev);
                 prev = copy_token(&tmp);
@@ -292,10 +331,15 @@ bool tokenizator(char* math_expression, queue* res_queue){
 
             if(math_expression[index] == '>' && math_expression[index+1] == '>'){
                 token tmp = make_token(TOKEN_OPERATOR, ">>");
-                if (!push_queue(res_queue, tmp)) {
-                    free_token(&tmp);
-                    free_token(&prev);
-                    return false;
+                if (!push_queue(res_queue, tmp))
+                { 
+                    free_token(&tmp); 
+                    free_token(&prev); 
+                    if(err_code)
+                    {
+                        *err_code = 5;
+                        return false;
+                    }   
                 }
                 free_token(&prev);
                 prev = copy_token(&tmp);
@@ -305,10 +349,15 @@ bool tokenizator(char* math_expression, queue* res_queue){
 
             if(math_expression[index] == '<' && math_expression[index+1] == '<'){
                 token tmp = make_token(TOKEN_OPERATOR, "<<");
-                if (!push_queue(res_queue, tmp)) {
-                    free_token(&tmp);
-                    free_token(&prev);
-                    return false;
+                if (!push_queue(res_queue, tmp))
+                { 
+                    free_token(&tmp); 
+                    free_token(&prev); 
+                    if(err_code)
+                    {
+                        *err_code = 5;
+                        return false;
+                    }   
                 }
                 free_token(&prev);
                 prev = copy_token(&tmp);
@@ -321,18 +370,22 @@ bool tokenizator(char* math_expression, queue* res_queue){
         if(ch=='+'||ch=='-'||ch=='*'||ch=='/'||ch=='%'||ch=='&'||ch=='^'||ch=='|'||ch=='~'){
             bool unary = false;
 
-            if((ch == '+' || ch == '-' || ch == '~') &&
-               (prev.type == TOKEN_NULL || is_operator_token(&prev) || prev.type == TOKEN_LPAREN)){
+            if((ch == '+' || ch == '-' || ch == '~') && (prev.type == TOKEN_NULL || is_operator_token(&prev) || prev.type == TOKEN_UNARY_OPERATOR || prev.type == TOKEN_LPAREN)){
                 unary = true;
             }
 
             char tmp_s[2] = {ch, '\0'};
             token tmp = make_token(unary ? TOKEN_UNARY_OPERATOR : TOKEN_OPERATOR, tmp_s);
 
-            if (!push_queue(res_queue, tmp)) {
-                free_token(&tmp);
-                free_token(&prev);
-                return false;
+            if (!push_queue(res_queue, tmp))
+            { 
+                free_token(&tmp); 
+                free_token(&prev); 
+                if(err_code)
+                {
+                    *err_code = 5;
+                    return false;
+                }   
             }
             free_token(&prev);
             prev = copy_token(&tmp);
@@ -341,7 +394,10 @@ bool tokenizator(char* math_expression, queue* res_queue){
             continue;
         }
 
-        fprintf(stderr, "Unknown character: '%c'\n", math_expression[index]);
+        if(err_code)
+        {
+            *err_code = 1;
+        }
         free_token(&prev);
         return false;
     }
@@ -350,70 +406,77 @@ bool tokenizator(char* math_expression, queue* res_queue){
     return true;
 }
 
-bool binary_operators_operations(int a, int b, const char* operation, int* res) {
-    if (operation == NULL || res == NULL) {
-        return false;
+bool safe_pow(int a, int b, int* res){
+    if(b < 0) return false;
+    int64_t r = 1;
+    for(int i = 0; i < b; i++){
+        r = (int64_t)((int32_t)r * (int32_t)a);
+    }
+    *res = (int32_t)r;
+    return true;
+}
+
+bool binary_operators_operations(int32_t a, int32_t b, const char* op, int32_t* res, int* err_code){
+    if(!op || !res)
+    { 
+        if(err_code)
+        {
+            *err_code = 5;
+        }
+        return false; 
     }
 
-    if (strcmp(operation, "+") == 0) {
-        *res = a + b;
+    if(strcmp(op, "+") == 0){
+        int64_t tmp = (int64_t)a + (int64_t)b;
+        *res = (int32_t)tmp; 
     }
-    else if (strcmp(operation, "-") == 0) {
-        *res = a - b;
+    else if(strcmp(op, "-") == 0){
+        int64_t tmp = (int64_t)a - (int64_t)b;
+        *res = (int32_t)tmp; 
     }
-    else if (strcmp(operation, "*") == 0) {
-        *res = a * b;
+    else if(strcmp(op, "*") == 0){
+        int64_t tmp = (int64_t)a * (int64_t)b;
+        *res = (int32_t)tmp; 
     }
-    else if(strcmp(operation, "**")==0){
-        if(b<0){
-            return false;
-        }
-        *res = pow(a, b);
+    else if(strcmp(op, "**") == 0){
+        if(!safe_pow(a, b, res)) { if(err_code) *err_code = 3; return false; }
     }
-    else if (strcmp(operation, "/") == 0) {
-        if (b == 0) {
-            return false; // деление на 0
-        }
-        if (a == INT_MIN && b == -1) {
-            return false; // integer overflow
-        }
+    else if(strcmp(op, "/") == 0){
+        if (b == 0 || (a == INT_MIN && b == -1)){ if(err_code) *err_code = 3; return false; }
         *res = a / b;
     }
-    else if (strcmp(operation, "%") == 0) {
-        if (b == 0) {
-            return false; // деление на 0
-        }
+    else if(strcmp(op, "%") == 0){
+        if (b == 0){ if(err_code) *err_code = 3; return false; }
         *res = a % b;
     }
-    else if (strcmp(operation, "&") == 0) {
+    else if(strcmp(op, "<<") == 0){
+        if (b < 0 || b >= 32){ if(err_code) *err_code = 3; return false; }
+        *res = (int32_t)(a << b);
+    }
+    else if(strcmp(op, ">>") == 0){
+        if (b < 0 || b >= 32){ if(err_code) *err_code = 3; return false; }
+        *res = (int32_t)(a >> b);
+    }
+    else if(strcmp(op, "&") == 0){
         *res = a & b;
     }
-    else if (strcmp(operation, "^") == 0) {
+    else if(strcmp(op, "^") == 0){
         *res = a ^ b;
     }
-    else if (strcmp(operation, "|") == 0) {
+    else if(strcmp(op, "|") == 0){
         *res = a | b;
     }
-    else if (strcmp(operation, ">>") == 0) {
-        if (b < 0 || b >= 32) {
-            return false; // некорректный сдвиг
+    else{ 
+        if(err_code){
+            *err_code = 1; 
         }
-        *res = a >> b;
-    }
-    else if (strcmp(operation, "<<") == 0) {
-        if (b < 0 || b >= 32) {
-            return false; // некорректный сдвиг
-        }
-        *res = a << b;
-    }
-    else {
-        return false; // неизвестная операция
+        return false; 
     }
 
     return true;
 }
 
-bool unary_operators_operations(int a, const char* operation, int* res){
+bool unary_operators_operations(int32_t a, const char* operation, int32_t* res, int* err_code){
     if(strcmp(operation, "~") == 0){
         *res = ~a;
     }
@@ -424,58 +487,57 @@ bool unary_operators_operations(int a, const char* operation, int* res){
         *res = -a;
     }
     else{
+        if(err_code) *err_code = 1;
         return false;
     }
     return true;
 }
 
-queue shunting_yard_algorithm(queue input){
+
+queue shunting_yard_algorithm(queue input, int* err_code){
     queue output;
-    initialize_queue(&output, 100);
+    initialize_queue(&output, input.capacity ? input.capacity : 16);
 
     stack operator_stack;
-    initialize_stack(&operator_stack, 100);
+    initialize_stack(&operator_stack, input.capacity ? input.capacity : 16);
 
     while(!is_empty_queue(&input)){
         token t = pop_queue(&input);
         if(t.type == TOKEN_NUMBER){
-            push_queue(&output, t);
+            token copy = copy_token(&t);
+            push_queue(&output, copy);
         }
         else if(t.type == TOKEN_OPERATOR){
-            // Для бинарных операторов учитываем ассоциативность
-            // Левоассоциативные: выталкиваем операторы с приоритетом > текущего
-            // ИЛИ операторы с тем же приоритетом (если они тоже левоассоциативные)
-            // Правоассоциативные (**): выталкиваем только операторы с > приоритетом
             while(!is_empty_stack(&operator_stack)){
                 token top = peek_stack(&operator_stack);
-                // Останавливаемся на скобке
                 if(top.type == TOKEN_LPAREN){
                     break;
                 }
-                // Для операторов проверяем приоритет и ассоциативность
                 if(is_operator_token(&top)){
+                    if(top.type == TOKEN_UNARY_OPERATOR){
+                        token popped = pop_stack(&operator_stack);
+                        token copy = copy_token(&popped);
+                        free_token(&popped); 
+                        push_queue(&output, copy);
+                        continue; 
+                    }
                     bool should_pop = false;
                     if(is_right_assoc(&t)){
-                        // Правоассоциативный (**): выталкиваем только если приоритет оператора на стеке строго меньше
-                        // (меньшее число = выше приоритет)
                         should_pop = (top.priority < t.priority);
                     } else {
-                        // Левоассоциативный: выталкиваем операторы с приоритетом <= текущего
-                        // (меньшее число = выше приоритет, поэтому <= означает >= приоритет)
-                        // Но только если оператор на стеке тоже левоассоциативный
                         if(top.priority < t.priority){
-                            // Оператор на стеке имеет более высокий приоритет - всегда выталкиваем
                             should_pop = true;
                         } else if(top.priority == t.priority){
-                            // Одинаковый приоритет - выталкиваем только если оператор на стеке левоассоциативный
                             should_pop = !is_right_assoc(&top);
                         } else {
-                            // Оператор на стеке имеет более низкий приоритет - не выталкиваем
                             should_pop = false;
                         }
                     }
                     if(should_pop){
-                        push_queue(&output, pop_stack(&operator_stack));
+                        token popped = pop_stack(&operator_stack);
+                        token copy = copy_token(&popped);
+                        free_token(&popped); 
+                        push_queue(&output, copy);
                     } else {
                         break;
                     }
@@ -483,132 +545,206 @@ queue shunting_yard_algorithm(queue input){
                     break;
                 }
             }
-            push_stack(&operator_stack, t);
+            token copy_op = copy_token(&t);
+            push_stack(&operator_stack, copy_op);
         }
         else if(t.type == TOKEN_LPAREN){
-            push_stack(&operator_stack, t);
+            token copy = copy_token(&t);
+            push_stack(&operator_stack, copy);
         }
         else if(t.type == TOKEN_RPAREN){
-            // Выталкиваем все операторы до открывающей скобки
             bool found_lparen = false;
             while(!is_empty_stack(&operator_stack)){
                 token top = peek_stack(&operator_stack);
                 if(top.type == TOKEN_LPAREN){
                     found_lparen = true;
-                    pop_stack(&operator_stack); // Удаляем открывающую скобку
+                    token lparen = pop_stack(&operator_stack);
+                    free_token(&lparen); 
                     break;
                 } else {
-                    push_queue(&output, pop_stack(&operator_stack));
+                    token popped = pop_stack(&operator_stack);
+                    token copy = copy_token(&popped);
+                    free_token(&popped); 
+                    push_queue(&output, copy);
                 }
             }
             if(!found_lparen){
-                fprintf(stderr, "Error: Mismatched parentheses\n");
+                if(err_code){
+                    *err_code = 2;
+                }
                 delete_queue(&output);
                 delete_stack(&operator_stack);
                 return output;
             }
         }
         else if (t.type == TOKEN_UNARY_OPERATOR) {
-            // Унарные операторы правоассоциативные
-            // Выталкиваем только операторы с строго большим приоритетом
-            while(!is_empty_stack(&operator_stack)){
-                token top = peek_stack(&operator_stack);
-                if(top.type == TOKEN_LPAREN){
-                    break;
-                }
-                if(is_operator_token(&top) && top.priority > t.priority){
-                    push_queue(&output, pop_stack(&operator_stack));
-                } else {
-                    break;
-                }
-            }
-            push_stack(&operator_stack, t);
+            token copy_unary = copy_token(&t);
+            push_stack(&operator_stack, copy_unary);
         }
         else{
-            fprintf(stderr, "Error: unknown token type: %d\n", t.type);
+            if(err_code){
+                *err_code = 1;
+            }
             delete_queue(&output);
             delete_stack(&operator_stack);
+            delete_queue(&input); 
             return output;
         }
     }
-    // Выталкиваем оставшиеся операторы
+
     while(!is_empty_stack(&operator_stack)){
         token top = pop_stack(&operator_stack);
         if(top.type == TOKEN_LPAREN || top.type == TOKEN_RPAREN){
-            fprintf(stderr, "Error: Mismatched parentheses\n");
+            free_token(&top);
+            if(err_code){
+                *err_code = 2;
+            }
             delete_queue(&output);
             delete_stack(&operator_stack);
+            delete_queue(&input); 
             return output;
         }
-        push_queue(&output, top);
+        token copy = copy_token(&top);
+        free_token(&top); 
+        push_queue(&output, copy);
     }
     delete_stack(&operator_stack);
     return output;
 }
 
-int calculate_expression(queue q) {
-    stack result_stack;
-    if (!initialize_stack(&result_stack, q.capacity))
-        return 2;
-
-    while (!is_empty_queue(&q)) {
-        token current = pop_queue(&q);
-
-        if (current.type == TOKEN_NUMBER) {
-            push_stack(&result_stack, current);
+bool calculate_expression(queue* q, int* out, int* err_code){
+    stack st;
+    if(!initialize_stack(&st, q->capacity)) { 
+        if(err_code){
+            *err_code = 5;
         }
-        else if (current.type == TOKEN_OPERATOR) {
-            if (is_empty_stack(&result_stack)) goto error;
-            token tb = pop_stack(&result_stack);
-            if (is_empty_stack(&result_stack)) {
-                free(tb.value);
+        return false; 
+    }
+
+    while(!is_empty_queue(q)){
+        token cur = pop_queue(q);
+
+        if(cur.type == TOKEN_NUMBER){
+            token copy = copy_token(&cur);
+            push_stack(&st, copy); 
+            continue;
+        }
+
+        if(cur.type == TOKEN_OPERATOR){
+            if(st.top < 2){ 
+                if(err_code){
+                    *err_code = 2;
+                }
+                goto error; 
+            }
+
+            token tb = pop_stack(&st);
+            token ta = pop_stack(&st);
+
+            char* endp = NULL;
+            long lb = strtol(tb.value, &endp, 10);
+            if(endp==tb.value || *endp!='\0' || lb < INT_MIN || lb > INT_MAX)
+            { 
+                free_token(&tb); 
+                free_token(&ta); 
+                if(err_code){
+                    *err_code = 1;
+                }
+                goto error; 
+            }
+            endp = NULL;
+            long la = strtol(ta.value, &endp, 10);
+            if(endp==ta.value || *endp!='\0' || la < INT_MIN || la > INT_MAX)
+            { 
+                free_token(&tb); 
+                free_token(&ta); 
+                if(err_code){
+                    *err_code = 1;
+                }
+                goto error; 
+            }
+            int32_t b = (int32_t)lb;
+            int32_t a = (int32_t)la;
+
+            free_token(&tb);
+            free_token(&ta);
+
+            int32_t r;
+            if(!binary_operators_operations(a, b, cur.value, &r, err_code))
+            {
                 goto error;
             }
-            token ta = pop_stack(&result_stack);
-
-            int b = atoi(tb.value);
-            int a = atoi(ta.value);
-
-            free(tb.value);
-            free(ta.value);
-
-            int result;
-            if (!binary_operators_operations(a, b, current.value, &result))
-                goto error;
 
             char buf[32];
-            snprintf(buf, sizeof(buf), "%d", result);
-            push_stack(&result_stack, make_token(TOKEN_NUMBER, buf));
+            snprintf(buf, sizeof(buf), "%d", r);
+            push_stack(&st, make_token(TOKEN_NUMBER, buf));
         }
-        else if (current.type == TOKEN_UNARY_OPERATOR) {
-            if (is_empty_stack(&result_stack)) goto error;
-            token ta = pop_stack(&result_stack);
+        else if(cur.type == TOKEN_UNARY_OPERATOR){
+            if(st.top < 1){ 
+                if(err_code){
+                    *err_code = 2;
+                }
+                goto error; 
+            }
 
-            int a = atoi(ta.value);
-            free(ta.value);
+            token ta = pop_stack(&st);
+            char* endp = NULL;
+            long la = strtol(ta.value, &endp, 10);
+            if(endp==ta.value || *endp!='\0' || la < INT_MIN || la > INT_MAX){ 
+                free_token(&ta); 
+                if(err_code){
+                    *err_code = 1;
+                }
+                goto error; 
+            }
+            int32_t a = (int32_t)la;
+            free_token(&ta);
 
-            int result;
-            if (!unary_operators_operations(a, current.value, &result))
+            int32_t r;
+            if(!unary_operators_operations(a, cur.value, &r, err_code))
+            {
                 goto error;
+            }
 
             char buf[32];
-            snprintf(buf, sizeof(buf), "%d", result);
-            push_stack(&result_stack, make_token(TOKEN_NUMBER, buf));
+            snprintf(buf, sizeof(buf), "%d", r);
+            push_stack(&st, make_token(TOKEN_NUMBER, buf));
+        }
+        else { 
+            if(err_code){
+                *err_code = 1;
+            }
+            goto error; 
         }
     }
 
-    if (result_stack.top != 1)
-        goto error;
+    if(st.top != 1){ 
+        if(err_code){
+            *err_code = 2;
+        }
+        goto error; 
+    }
 
-    token res = pop_stack(&result_stack);
-    int final_result = atoi(res.value);
-    free(res.value);
-    delete_stack(&result_stack);
-    return final_result;
+    token res = pop_stack(&st);
+    char* endp = NULL;
+    long lres = strtol(res.value, &endp, 10);
+    if(endp==res.value || *endp!='\0' || lres < INT_MIN || lres > INT_MAX)
+    { 
+        free_token(&res); 
+        if(err_code){
+            *err_code = 1;
+        }
+        delete_stack(&st); 
+        return false; 
+    }
+    *out = (int32_t)lres;
+    free_token(&res);
+    delete_stack(&st);
+    return true;
 
 error:
-    delete_stack(&result_stack);
-    return 2;
+    delete_stack(&st);
+    return false;
 }
 
 bool parse_console_data(int argc, char* argv[], char** input_file_path, char** output_file_path, bool* polish_notation)
@@ -673,8 +809,12 @@ bool parse_console_data(int argc, char* argv[], char** input_file_path, char** o
 
 bool parse_file_data(FILE* input_file, char** math_expression)
 {
-    if (!input_file) return false;
-    if (fseek(input_file, 0, SEEK_END) != 0) return false;
+    if (!input_file){
+        return false;
+    }
+    if (fseek(input_file, 0, SEEK_END) != 0){
+        return false;
+    }
     long size = ftell(input_file);
     if (size < 0){
         return false;
@@ -682,7 +822,9 @@ bool parse_file_data(FILE* input_file, char** math_expression)
     rewind(input_file);
 
     *math_expression = malloc((size_t)size + 1);
-    if (*math_expression == NULL) return false;
+    if (*math_expression == NULL){
+        return false;
+    }
 
     size_t read = fread(*math_expression, 1, (size_t)size, input_file);
     (*math_expression)[read] = '\0';
@@ -690,15 +832,11 @@ bool parse_file_data(FILE* input_file, char** math_expression)
     return true;
 }
 
-void print_queue_to_file(queue q, FILE* out){
-    while(!is_empty_queue(&q)){
-        token t = pop_queue(&q);
-        fprintf(out, "%s\n", t.value);
-        free_token(&t);
+void print_queue_to_file(queue* q, FILE* out){
+    for(size_t i = q->front; i < q->rear; i++){
+        fprintf(out, "%s\n", q->data[i].value);
     }
 }
-
-
 
 void print_answer_to_file(int answer, FILE* output_file){
     fprintf(output_file, "%d", answer);
@@ -737,6 +875,8 @@ int main(int argc, char* argv[])
         return 5;
     }
 
+    int err_code = 0;
+
     queue tokenized_expression;
     if (!initialize_queue(&tokenized_expression, 100)) {
         fprintf(stderr, "Error: Cannot initialize tokenized expression queue\n");
@@ -744,33 +884,44 @@ int main(int argc, char* argv[])
         free(expr);
         return 5;
     }
-    if (!tokenizator(expr, &tokenized_expression)) {
-        fprintf(stderr, "Error: Cannot tokenize expression\n");
+    if (!tokenizator(expr, &tokenized_expression, &err_code)) {
+        fprintf(stderr, "Error: Unsupported token\n");
         delete_queue(&tokenized_expression);
         fclose(input_file);
         free(expr);
-        return 5;
+        return err_code ? err_code : 1;
     }
 
-    queue shunted_expression = shunting_yard_algorithm(tokenized_expression);
+    queue shunted_expression = shunting_yard_algorithm(tokenized_expression, &err_code);
+
+    delete_queue(&tokenized_expression);
+    if(err_code){
+        fprintf(stderr, "Error: Parse failed\n");
+        delete_queue(&shunted_expression);
+        fclose(input_file);
+        fclose(output_file);
+        free(expr);
+        return err_code;
+    }
 
 
     if(polish_notation){
-    print_queue_to_file(shunted_expression, output_file);
+        print_queue_to_file(&shunted_expression, output_file);
+        delete_queue(&shunted_expression);
     }
     else{
-    int ans;
-    if(!calculate_expression(shunted_expression, &ans)){
-        fprintf(stderr, "Calculation error\n");
+        int res;
+        if(!calculate_expression(&shunted_expression, &res, &err_code)){
+            fprintf(stderr, "Error: Evaluation failed\n");
+            delete_queue(&shunted_expression);
+            fclose(input_file);
+            fclose(output_file);
+            free(expr);
+            return err_code ? err_code : 3;
+        }
+        print_answer_to_file(res, output_file);
         delete_queue(&shunted_expression);
-        return 6;
-    
     }
-    print_answer_to_file(ans, output_file);
-    }
-    delete_queue(&tokenized_expression);
-    fclose(input_file);
-    fclose(output_file);
     free(expr);
     return 0;
 }
