@@ -219,7 +219,10 @@ void delete_queue(queue* q)
 	}
 	for (size_t i = 0; i < q->rear; i++)
 	{
-		free_token(&q->data[i]);
+		if (q->data[i].value != NULL)
+		{
+			free_token(&q->data[i]);
+		}
 	}
 	free(q->data);
 	q->data = NULL;
@@ -631,10 +634,31 @@ bool unary_operators_operations(int32_t a, const char* operation, int32_t* res, 
 queue shunting_yard_algorithm(queue input, int* err_code)
 {
 	queue output;
-	initialize_queue(&output, input.capacity ? input.capacity : 16);
+	if (!initialize_queue(&output, input.capacity ? input.capacity : 16))
+	{
+		if (err_code)
+		{
+			*err_code = 5;
+		}
+		queue empty;
+		empty.data = NULL;
+		empty.front = empty.rear = empty.capacity = 0;
+		return empty;
+	}
 
 	stack operator_stack;
-	initialize_stack(&operator_stack, input.capacity ? input.capacity : 16);
+	if (!initialize_stack(&operator_stack, input.capacity ? input.capacity : 16))
+	{
+		if (err_code)
+		{
+			*err_code = 5;
+		}
+		delete_queue(&output);
+		queue empty;
+		empty.data = NULL;
+		empty.front = empty.rear = empty.capacity = 0;
+		return empty;
+	}
 
 	while (!is_empty_queue(&input))
 	{
@@ -737,7 +761,10 @@ queue shunting_yard_algorithm(queue input, int* err_code)
 				}
 				delete_queue(&output);
 				delete_stack(&operator_stack);
-				return output;
+				queue empty;
+				empty.data = NULL;
+				empty.front = empty.rear = empty.capacity = 0;
+				return empty;
 			}
 		}
 		else if (t.type == TOKEN_UNARY_OPERATOR)
@@ -753,8 +780,10 @@ queue shunting_yard_algorithm(queue input, int* err_code)
 			}
 			delete_queue(&output);
 			delete_stack(&operator_stack);
-			delete_queue(&input);
-			return output;
+			queue empty;
+			empty.data = NULL;
+			empty.front = empty.rear = empty.capacity = 0;
+			return empty;
 		}
 	}
 
@@ -770,13 +799,40 @@ queue shunting_yard_algorithm(queue input, int* err_code)
 			}
 			delete_queue(&output);
 			delete_stack(&operator_stack);
-			delete_queue(&input);
-			return output;
+			queue empty;
+			empty.data = NULL;
+			empty.front = empty.rear = empty.capacity = 0;
+			return empty;
 		}
 		token copy = copy_token(&top);
 		free_token(&top);
 		push_queue(&output, copy);
 	}
+
+	bool has_operand = false;
+	for (size_t i = output.front; i < output.rear; i++)
+	{
+		if (output.data[i].type == TOKEN_NUMBER)
+		{
+			has_operand = true;
+			break;
+		}
+	}
+
+	if (!has_operand)
+	{
+		if (err_code)
+		{
+			*err_code = 2;
+		}
+		delete_queue(&output);
+		delete_stack(&operator_stack);
+		queue empty;
+		empty.data = NULL;
+		empty.front = empty.rear = empty.capacity = 0;
+		return empty;
+	}
+
 	delete_stack(&operator_stack);
 	return output;
 }
@@ -1027,9 +1083,16 @@ bool parse_file_data(FILE* input_file, char** math_expression)
 
 void print_queue_to_file(queue* q, FILE* out)
 {
+	if (!q || !q->data)
+	{
+		return;
+	}
 	for (size_t i = q->front; i < q->rear; i++)
 	{
-		fprintf(out, "%s\n", q->data[i].value);
+		if (q->data[i].value)
+		{
+			fprintf(out, "%s\n", q->data[i].value);
+		}
 	}
 }
 
