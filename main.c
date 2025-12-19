@@ -9,8 +9,10 @@
 typedef enum
 {
 	TOKEN_NUMBER,
+	TOKEN_FLOAT_NUMBER,
 	TOKEN_OPERATOR,
 	TOKEN_UNARY_OPERATOR,
+	TOKEN_FUNCTION,
 	TOKEN_LPAREN,
 	TOKEN_RPAREN,
 	TOKEN_NULL
@@ -27,7 +29,7 @@ token make_token(token_type type, const char* text)
 {
 	token t;
 	t.type = type;
-	t.priority = 0;
+	t.priority = -1;
 	if (text)
 	{
 		t.value = malloc(strlen(text) + 1);
@@ -41,6 +43,10 @@ token make_token(token_type type, const char* text)
 		t.value = NULL;
 	}
 
+	if (type == TOKEN_FUNCTION)
+	{
+		t.priority = 0;
+	}
 	if (type == TOKEN_UNARY_OPERATOR)
 	{
 		t.priority = 1;
@@ -109,6 +115,17 @@ token copy_token(const token* t)
 bool is_digit_char(char c)
 {
 	return (c >= '0' && c <= '9');
+}
+
+bool is_letter_char(char c)
+{
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+
+bool is_valid_function(const char* func_name)
+{
+	return strcmp(func_name, "sqrt") == 0 || strcmp(func_name, "log2") == 0 || strcmp(func_name, "sin") == 0 ||
+		   strcmp(func_name, "cos") == 0 || strcmp(func_name, "tan") == 0;
 }
 
 typedef struct
@@ -264,6 +281,30 @@ bool is_empty_queue(queue* q)
 	return q->front == q->rear;
 }
 
+static queue make_empty_queue(void)
+{
+	queue empty;
+	empty.data = NULL;
+	empty.front = empty.rear = empty.capacity = 0;
+	return empty;
+}
+
+static bool parse_string_to_int(const char* str, int32_t* result, int* err_code)
+{
+	char* endp = NULL;
+	long value = strtol(str, &endp, 10);
+	if (endp == str || *endp != '\0' || value < INT_MIN || value > INT_MAX)
+	{
+		if (err_code)
+		{
+			*err_code = 1;
+		}
+		return false;
+	}
+	*result = (int32_t)value;
+	return true;
+}
+
 bool is_right_assoc(const token* t)
 {
 	if (!t || !t->value)
@@ -301,7 +342,64 @@ bool tokenizator(char* math_expression, queue* res_queue, int* err_code)
 		if (is_digit_char(math_expression[index]))
 		{
 			size_t temp_index = index;
-			while (temp_index < length && is_digit_char(math_expression[temp_index]))
+			bool has_dot = false;
+			while (temp_index < length && (is_digit_char(math_expression[temp_index]) || math_expression[temp_index] == '.'))
+			{
+				if (math_expression[temp_index] == '.')
+				{
+					if (has_dot)
+					{
+						if (err_code)
+						{
+							*err_code = 2;
+						}
+						free_token(&prev);
+						return false;
+					}
+					has_dot = true;
+				}
+				temp_index++;
+			}
+
+			size_t buffer_size = temp_index - index + 1;
+			char* buffer = malloc(buffer_size);
+			if (!buffer)
+			{
+				if (err_code)
+				{
+					*err_code = 5;
+					free_token(&prev);
+					return false;
+				}
+			}
+			memcpy(buffer, math_expression + index, buffer_size - 1);
+			buffer[buffer_size - 1] = '\0';
+
+			token temp_token = make_token(has_dot ? TOKEN_FLOAT_NUMBER : TOKEN_NUMBER, buffer);
+			free(buffer);
+
+			if (!push_queue(res_queue, temp_token))
+			{
+				free_token(&temp_token);
+				free_token(&prev);
+				if (err_code)
+				{
+					*err_code = 5;
+				}
+				return false;
+			}
+
+			index = temp_index;
+
+			free_token(&prev);
+			prev = copy_token(&temp_token);
+			continue;
+		}
+
+		if (is_letter_char(math_expression[index]))
+		{
+			size_t temp_index = index;
+			while (temp_index < length && (is_letter_char(math_expression[temp_index]) || is_digit_char(math_expression[temp_index])))
 			{
 				temp_index++;
 			}
@@ -320,7 +418,18 @@ bool tokenizator(char* math_expression, queue* res_queue, int* err_code)
 			memcpy(buffer, math_expression + index, buffer_size - 1);
 			buffer[buffer_size - 1] = '\0';
 
-			token temp_token = make_token(TOKEN_NUMBER, buffer);
+			if (!is_valid_function(buffer))
+			{
+				free(buffer);
+				if (err_code)
+				{
+					*err_code = 1;
+				}
+				free_token(&prev);
+				return false;
+			}
+
+			token temp_token = make_token(TOKEN_FUNCTION, buffer);
 			free(buffer);
 
 			if (!push_queue(res_queue, temp_token))
@@ -631,6 +740,136 @@ bool unary_operators_operations(int32_t a, const char* operation, int32_t* res, 
 	return true;
 }
 
+bool binary_operators_operations_float(float a, float b, const char* op, float* res, int* err_code)
+{
+	if (!op || !res)
+	{
+		if (err_code)
+		{
+			*err_code = 5;
+		}
+		return false;
+	}
+
+	if (strcmp(op, "+") == 0)
+	{
+		*res = a + b;
+	}
+	else if (strcmp(op, "-") == 0)
+	{
+		*res = a - b;
+	}
+	else if (strcmp(op, "*") == 0)
+	{
+		*res = a * b;
+	}
+	else if (strcmp(op, "/") == 0)
+	{
+		if (b == 0.0f)
+		{
+			if (err_code)
+			{
+				*err_code = 3;
+			}
+			return false;
+		}
+		*res = a / b;
+	}
+	else if (strcmp(op, "**") == 0)
+	{
+		*res = powf(a, b);
+	}
+	else
+	{
+		if (err_code)
+		{
+			*err_code = 1;
+		}
+		return false;
+	}
+
+	return true;
+}
+
+bool unary_operators_operations_float(float a, const char* operation, float* res, int* err_code)
+{
+	if (strcmp(operation, "+") == 0)
+	{
+		*res = +a;
+	}
+	else if (strcmp(operation, "-") == 0)
+	{
+		*res = -a;
+	}
+	else
+	{
+		if (err_code)
+		{
+			*err_code = 1;
+		}
+		return false;
+	}
+	return true;
+}
+
+bool function_operations(const char* func_name, float arg, float* res, int* err_code)
+{
+	if (!func_name || !res)
+	{
+		if (err_code)
+		{
+			*err_code = 5;
+		}
+		return false;
+	}
+
+	if (strcmp(func_name, "sqrt") == 0)
+	{
+		if (arg < 0.0f)
+		{
+			if (err_code)
+			{
+				*err_code = 3;
+			}
+			return false;
+		}
+		*res = sqrtf(arg);
+	}
+	else if (strcmp(func_name, "log2") == 0)
+	{
+		if (arg <= 0.0f)
+		{
+			if (err_code)
+			{
+				*err_code = 3;
+			}
+			return false;
+		}
+		*res = log2f(arg);
+	}
+	else if (strcmp(func_name, "sin") == 0)
+	{
+		*res = sinf(arg);
+	}
+	else if (strcmp(func_name, "cos") == 0)
+	{
+		*res = cosf(arg);
+	}
+	else if (strcmp(func_name, "tan") == 0)
+	{
+		*res = tanf(arg);
+	}
+	else
+	{
+		if (err_code)
+		{
+			*err_code = 1;
+		}
+		return false;
+	}
+	return true;
+}
+
 queue shunting_yard_algorithm(queue input, int* err_code)
 {
 	queue output;
@@ -640,10 +879,7 @@ queue shunting_yard_algorithm(queue input, int* err_code)
 		{
 			*err_code = 5;
 		}
-		queue empty;
-		empty.data = NULL;
-		empty.front = empty.rear = empty.capacity = 0;
-		return empty;
+		return make_empty_queue();
 	}
 
 	stack operator_stack;
@@ -654,19 +890,27 @@ queue shunting_yard_algorithm(queue input, int* err_code)
 			*err_code = 5;
 		}
 		delete_queue(&output);
-		queue empty;
-		empty.data = NULL;
-		empty.front = empty.rear = empty.capacity = 0;
-		return empty;
+		return make_empty_queue();
 	}
 
 	while (!is_empty_queue(&input))
 	{
 		token t = pop_queue(&input);
-		if (t.type == TOKEN_NUMBER)
+		if (t.type == TOKEN_NUMBER || t.type == TOKEN_FLOAT_NUMBER)
 		{
 			token copy = copy_token(&t);
 			push_queue(&output, copy);
+			if (!is_empty_stack(&operator_stack))
+			{
+				token top = peek_stack(&operator_stack);
+				if (top.type == TOKEN_FUNCTION)
+				{
+					token func = pop_stack(&operator_stack);
+					token func_copy = copy_token(&func);
+					free_token(&func);
+					push_queue(&output, func_copy);
+				}
+			}
 		}
 		else if (t.type == TOKEN_OPERATOR)
 		{
@@ -761,11 +1005,24 @@ queue shunting_yard_algorithm(queue input, int* err_code)
 				}
 				delete_queue(&output);
 				delete_stack(&operator_stack);
-				queue empty;
-				empty.data = NULL;
-				empty.front = empty.rear = empty.capacity = 0;
-				return empty;
+				return make_empty_queue();
 			}
+			if (!is_empty_stack(&operator_stack))
+			{
+				token top = peek_stack(&operator_stack);
+				if (top.type == TOKEN_FUNCTION)
+				{
+					token func = pop_stack(&operator_stack);
+					token copy = copy_token(&func);
+					free_token(&func);
+					push_queue(&output, copy);
+				}
+			}
+		}
+		else if (t.type == TOKEN_FUNCTION)
+		{
+			token copy = copy_token(&t);
+			push_stack(&operator_stack, copy);
 		}
 		else if (t.type == TOKEN_UNARY_OPERATOR)
 		{
@@ -780,10 +1037,7 @@ queue shunting_yard_algorithm(queue input, int* err_code)
 			}
 			delete_queue(&output);
 			delete_stack(&operator_stack);
-			queue empty;
-			empty.data = NULL;
-			empty.front = empty.rear = empty.capacity = 0;
-			return empty;
+			return make_empty_queue();
 		}
 	}
 
@@ -799,10 +1053,7 @@ queue shunting_yard_algorithm(queue input, int* err_code)
 			}
 			delete_queue(&output);
 			delete_stack(&operator_stack);
-			queue empty;
-			empty.data = NULL;
-			empty.front = empty.rear = empty.capacity = 0;
-			return empty;
+			return make_empty_queue();
 		}
 		token copy = copy_token(&top);
 		free_token(&top);
@@ -812,7 +1063,7 @@ queue shunting_yard_algorithm(queue input, int* err_code)
 	bool has_operand = false;
 	for (size_t i = output.front; i < output.rear; i++)
 	{
-		if (output.data[i].type == TOKEN_NUMBER)
+		if (output.data[i].type == TOKEN_NUMBER || output.data[i].type == TOKEN_FLOAT_NUMBER)
 		{
 			has_operand = true;
 			break;
@@ -827,17 +1078,14 @@ queue shunting_yard_algorithm(queue input, int* err_code)
 		}
 		delete_queue(&output);
 		delete_stack(&operator_stack);
-		queue empty;
-		empty.data = NULL;
-		empty.front = empty.rear = empty.capacity = 0;
-		return empty;
+		return make_empty_queue();
 	}
 
 	delete_stack(&operator_stack);
 	return output;
 }
 
-bool calculate_expression(queue* q, int* out, int* err_code)
+bool calculate_expression(queue* q, token* result_token, int* err_code)
 {
 	stack st;
 	if (!initialize_stack(&st, q->capacity))
@@ -853,7 +1101,7 @@ bool calculate_expression(queue* q, int* out, int* err_code)
 	{
 		token cur = pop_queue(q);
 
-		if (cur.type == TOKEN_NUMBER)
+		if (cur.type == TOKEN_NUMBER || cur.type == TOKEN_FLOAT_NUMBER)
 		{
 			token copy = copy_token(&cur);
 			push_stack(&st, copy);
@@ -871,48 +1119,92 @@ bool calculate_expression(queue* q, int* out, int* err_code)
 				goto error;
 			}
 
-			token tb = pop_stack(&st);
-			token ta = pop_stack(&st);
+			token right_token = pop_stack(&st);
+			token left_token = pop_stack(&st);
 
-			char* endp = NULL;
-			long lb = strtol(tb.value, &endp, 10);
-			if (endp == tb.value || *endp != '\0' || lb < INT_MIN || lb > INT_MAX)
+			bool left_is_float = (left_token.type == TOKEN_FLOAT_NUMBER);
+			bool right_is_float = (right_token.type == TOKEN_FLOAT_NUMBER);
+			bool use_float = left_is_float || right_is_float;
+
+			bool supports_float =
+				(cur.value && (strcmp(cur.value, "+") == 0 || strcmp(cur.value, "-") == 0 || strcmp(cur.value, "*") == 0 ||
+							   strcmp(cur.value, "/") == 0 || strcmp(cur.value, "**") == 0));
+
+			if (use_float && !supports_float)
 			{
-				free_token(&tb);
-				free_token(&ta);
+				free_token(&right_token);
+				free_token(&left_token);
 				if (err_code)
 				{
 					*err_code = 1;
 				}
 				goto error;
 			}
-			endp = NULL;
-			long la = strtol(ta.value, &endp, 10);
-			if (endp == ta.value || *endp != '\0' || la < INT_MIN || la > INT_MAX)
+
+			if (use_float)
 			{
-				free_token(&tb);
-				free_token(&ta);
-				if (err_code)
+				float left_float, right_float;
+				if (left_is_float)
 				{
-					*err_code = 1;
+					left_float = strtof(left_token.value, NULL);
 				}
-				goto error;
+				else
+				{
+					long left_value = strtol(left_token.value, NULL, 10);
+					left_float = (float)left_value;
+				}
+				if (right_is_float)
+				{
+					right_float = strtof(right_token.value, NULL);
+				}
+				else
+				{
+					long right_value = strtol(right_token.value, NULL, 10);
+					right_float = (float)right_value;
+				}
+
+				free_token(&right_token);
+				free_token(&left_token);
+
+				float result;
+				if (!binary_operators_operations_float(left_float, right_float, cur.value, &result, err_code))
+				{
+					goto error;
+				}
+
+				char buf[64];
+				snprintf(buf, sizeof(buf), "%e", result);
+				push_stack(&st, make_token(TOKEN_FLOAT_NUMBER, buf));
 			}
-			int32_t b = (int32_t)lb;
-			int32_t a = (int32_t)la;
-
-			free_token(&tb);
-			free_token(&ta);
-
-			int32_t r;
-			if (!binary_operators_operations(a, b, cur.value, &r, err_code))
+			else
 			{
-				goto error;
-			}
+				int32_t right_int, left_int;
+				if (!parse_string_to_int(right_token.value, &right_int, err_code))
+				{
+					free_token(&right_token);
+					free_token(&left_token);
+					goto error;
+				}
+				if (!parse_string_to_int(left_token.value, &left_int, err_code))
+				{
+					free_token(&right_token);
+					free_token(&left_token);
+					goto error;
+				}
 
-			char buf[32];
-			snprintf(buf, sizeof(buf), "%d", r);
-			push_stack(&st, make_token(TOKEN_NUMBER, buf));
+				free_token(&right_token);
+				free_token(&left_token);
+
+				int32_t result;
+				if (!binary_operators_operations(left_int, right_int, cur.value, &result, err_code))
+				{
+					goto error;
+				}
+
+				char buf[32];
+				snprintf(buf, sizeof(buf), "%d", result);
+				push_stack(&st, make_token(TOKEN_NUMBER, buf));
+			}
 		}
 		else if (cur.type == TOKEN_UNARY_OPERATOR)
 		{
@@ -925,30 +1217,90 @@ bool calculate_expression(queue* q, int* out, int* err_code)
 				goto error;
 			}
 
-			token ta = pop_stack(&st);
-			char* endp = NULL;
-			long la = strtol(ta.value, &endp, 10);
-			if (endp == ta.value || *endp != '\0' || la < INT_MIN || la > INT_MAX)
+			token operand_token = pop_stack(&st);
+			bool operand_is_float = (operand_token.type == TOKEN_FLOAT_NUMBER);
+			bool is_unary_plus_minus = (cur.value && (strcmp(cur.value, "+") == 0 || strcmp(cur.value, "-") == 0));
+			bool is_unary_tilde = (cur.value && strcmp(cur.value, "~") == 0);
+
+			if (operand_is_float && is_unary_tilde)
 			{
-				free_token(&ta);
+				free_token(&operand_token);
 				if (err_code)
 				{
 					*err_code = 1;
 				}
 				goto error;
 			}
-			int32_t a = (int32_t)la;
-			free_token(&ta);
 
-			int32_t r;
-			if (!unary_operators_operations(a, cur.value, &r, err_code))
+			if (operand_is_float && is_unary_plus_minus)
+			{
+				float operand_float = strtof(operand_token.value, NULL);
+				free_token(&operand_token);
+
+				float result;
+				if (!unary_operators_operations_float(operand_float, cur.value, &result, err_code))
+				{
+					goto error;
+				}
+
+				char buf[64];
+				snprintf(buf, sizeof(buf), "%e", result);
+				push_stack(&st, make_token(TOKEN_FLOAT_NUMBER, buf));
+			}
+			else
+			{
+				int32_t operand_int;
+				if (!parse_string_to_int(operand_token.value, &operand_int, err_code))
+				{
+					free_token(&operand_token);
+					goto error;
+				}
+				free_token(&operand_token);
+
+				int32_t result;
+				if (!unary_operators_operations(operand_int, cur.value, &result, err_code))
+				{
+					goto error;
+				}
+
+				char buf[32];
+				snprintf(buf, sizeof(buf), "%d", result);
+				push_stack(&st, make_token(TOKEN_NUMBER, buf));
+			}
+		}
+		else if (cur.type == TOKEN_FUNCTION)
+		{
+			if (st.top < 1)
+			{
+				if (err_code)
+				{
+					*err_code = 2;
+				}
+				goto error;
+			}
+
+			token arg_token = pop_stack(&st);
+			float arg_float;
+			if (arg_token.type == TOKEN_FLOAT_NUMBER)
+			{
+				arg_float = strtof(arg_token.value, NULL);
+			}
+			else
+			{
+				long arg_value = strtol(arg_token.value, NULL, 10);
+				arg_float = (float)arg_value;
+			}
+			free_token(&arg_token);
+
+			float result;
+			if (!function_operations(cur.value, arg_float, &result, err_code))
 			{
 				goto error;
 			}
 
-			char buf[32];
-			snprintf(buf, sizeof(buf), "%d", r);
-			push_stack(&st, make_token(TOKEN_NUMBER, buf));
+			char buf[64];
+			snprintf(buf, sizeof(buf), "%e", result);
+			push_stack(&st, make_token(TOKEN_FLOAT_NUMBER, buf));
 		}
 		else
 		{
@@ -969,21 +1321,7 @@ bool calculate_expression(queue* q, int* out, int* err_code)
 		goto error;
 	}
 
-	token res = pop_stack(&st);
-	char* endp = NULL;
-	long lres = strtol(res.value, &endp, 10);
-	if (endp == res.value || *endp != '\0' || lres < INT_MIN || lres > INT_MAX)
-	{
-		free_token(&res);
-		if (err_code)
-		{
-			*err_code = 1;
-		}
-		delete_stack(&st);
-		return false;
-	}
-	*out = (int32_t)lres;
-	free_token(&res);
+	*result_token = pop_stack(&st);
 	delete_stack(&st);
 	return true;
 
@@ -1096,9 +1434,17 @@ void print_queue_to_file(queue* q, FILE* out)
 	}
 }
 
-void print_answer_to_file(int answer, FILE* output_file)
+void print_answer_to_file(token* result_token, FILE* output_file)
 {
-	fprintf(output_file, "%d", answer);
+	if (result_token->type == TOKEN_FLOAT_NUMBER)
+	{
+		float float_value = strtof(result_token->value, NULL);
+		fprintf(output_file, "%e", float_value);
+	}
+	else
+	{
+		fprintf(output_file, "%d", atoi(result_token->value));
+	}
 }
 
 int main(int argc, char* argv[])
@@ -1174,7 +1520,7 @@ int main(int argc, char* argv[])
 	}
 	else
 	{
-		int res;
+		token res;
 		if (!calculate_expression(&shunted_expression, &res, &err_code))
 		{
 			fprintf(stderr, "Error: Evaluation failed\n");
@@ -1184,9 +1530,12 @@ int main(int argc, char* argv[])
 			free(expr);
 			return err_code ? err_code : 3;
 		}
-		print_answer_to_file(res, output_file);
+		print_answer_to_file(&res, output_file);
+		free_token(&res);
 		delete_queue(&shunted_expression);
 	}
+	fclose(input_file);
+	fclose(output_file);
 	free(expr);
 	return 0;
 }
